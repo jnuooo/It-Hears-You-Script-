@@ -1,0 +1,642 @@
+--[[
+      _       _    _         ____            _       _   
+     | |     | |  | |       / ___|          (_)     | |  
+  _  | |_ __ | |  | | ___  | |     ___  _ __ _ _ __ | |_ 
+ | | | | '_ \| |  | |/ _ \ | |    / _ \| '__| | '_ \| __|
+ | |_| | | | | |__| | (_) || |___| (_) | |  | | |_) | |_ 
+  \___/|_| |_|\____/ \___/  \____|\___/|_|  |_| .__/ \__|
+                                              | |        
+                                              |_|        
+    JnUo Script - Premium Multi-Functional Hub
+    Features: Doors ESP, Player ESP, Tool ESP, Entity ESP, Utility Tools
+--]]
+
+-- Services
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Deleting Roblox HealthBar Disable Script
+local function removeHealthBarScript()
+    local function destroyIn(parent)
+        if parent then
+            local scriptObj = parent:FindFirstChild("HealthBarRobloxDisable", true)
+            if scriptObj and scriptObj:IsA("LocalScript") then
+                scriptObj:Destroy()
+            end
+        end
+    end
+    destroyIn(StarterGui)
+    if LocalPlayer then
+        destroyIn(LocalPlayer:FindFirstChildOfClass("PlayerGui"))
+    end
+end
+removeHealthBarScript()
+
+-- ESP State Configurations
+local ESP_Toggles = {
+    Doors = false,
+    Players = false,
+    Tools = false,
+    Entities = false
+}
+
+local ESP_Cache = {
+    Doors = {},
+    Players = {},
+    Tools = {},
+    Entities = {}
+}
+
+-- Resolve Folder Helpers
+local function getDoorsFolder()
+    return Workspace:FindFirstChild("doors") or Workspace:FindFirstChild("Doors")
+end
+
+local function getEntitiesFolder()
+    return Workspace:FindFirstChild("entitys") or Workspace:FindFirstChild("Entities") or Workspace:FindFirstChild("entities") or Workspace:FindFirstChild("Entitys")
+end
+
+local function getSpawnedItemsFolder()
+    return Workspace:FindFirstChild("spawned items") or Workspace:FindFirstChild("spawned_items") or Workspace:FindFirstChild("Spawned Items") or Workspace:FindFirstChild("spawned")
+end
+
+-- Highlight & Name Tag Engine
+local function applyESP(instance, color, displayName, cacheTable)
+    if not instance then return end
+    if cacheTable[instance] then return end
+
+    -- Create Visual Highlight
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = color
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.45
+    highlight.OutlineTransparency = 0.1
+    highlight.Adornee = instance
+    highlight.Parent = instance
+
+    -- Create 3D Text Label
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.AlwaysOnTop = true
+    billboard.Adornee = instance:IsA("Model") and (instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart")) or instance
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = color
+    label.TextSize = 14
+    label.Font = Enum.Font.GothamBold
+    label.Text = displayName
+    label.TextStrokeTransparency = 0.4
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.Parent = billboard
+    
+    billboard.Parent = instance
+
+    cacheTable[instance] = {Highlight = highlight, Billboard = billboard}
+end
+
+local function removeESP(instance, cacheTable)
+    if cacheTable[instance] then
+        if cacheTable[instance].Highlight then
+            cacheTable[instance].Highlight:Destroy()
+        end
+        if cacheTable[instance].Billboard then
+            cacheTable[instance].Billboard:Destroy()
+        end
+        cacheTable[instance] = nil
+    end
+end
+
+-- 1. Doors ESP Logic
+local doorsConnection
+local function toggleDoorsESP(state)
+    ESP_Toggles.Doors = state
+    if state then
+        local folder = getDoorsFolder()
+        if folder then
+            for _, child in ipairs(folder:GetChildren()) do
+                applyESP(child, Color3.fromRGB(255, 110, 0), "Door", ESP_Cache.Doors)
+            end
+            doorsConnection = folder.ChildAdded:Connect(function(child)
+                task.wait(0.2)
+                if ESP_Toggles.Doors then
+                    applyESP(child, Color3.fromRGB(255, 110, 0), "Door", ESP_Cache.Doors)
+                end
+            end)
+        end
+    else
+        if doorsConnection then doorsConnection:Disconnect() doorsConnection = nil end
+        for inst, _ in pairs(ESP_Cache.Doors) do
+            removeESP(inst, ESP_Cache.Doors)
+        end
+    end
+end
+
+-- 2. Player ESP Logic
+local playerAddedConn, playerRemovingConn
+local charConnections = {}
+
+local function handlePlayerChar(player, char)
+    if not char then return end
+    applyESP(char, Color3.fromRGB(0, 130, 255), player.Name, ESP_Cache.Players)
+end
+
+local function togglePlayerESP(state)
+    ESP_Toggles.Players = state
+    if state then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                if player.Character then
+                    handlePlayerChar(player, player.Character)
+                end
+                charConnections[player] = player.CharacterAdded:Connect(function(char)
+                    task.wait(0.5)
+                    if ESP_Toggles.Players then
+                        handlePlayerChar(player, char)
+                    end
+                end)
+            end
+        end
+
+        playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            charConnections[player] = player.CharacterAdded:Connect(function(char)
+                task.wait(0.5)
+                if ESP_Toggles.Players then
+                    handlePlayerChar(player, char)
+                end
+            end)
+        end)
+
+        playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+            if charConnections[player] then
+                charConnections[player]:Disconnect()
+                charConnections[player] = nil
+            end
+            if player.Character then
+                removeESP(player.Character, ESP_Cache.Players)
+            end
+        end)
+    else
+        if playerAddedConn then playerAddedConn:Disconnect() playerAddedConn = nil end
+        if playerRemovingConn then playerRemovingConn:Disconnect() playerRemovingConn = nil end
+        for player, conn in pairs(charConnections) do
+            conn:Disconnect()
+        end
+        table.clear(charConnections)
+        for inst, _ in pairs(ESP_Cache.Players) do
+            removeESP(inst, ESP_Cache.Players)
+        end
+    end
+end
+
+-- 3. Tool ESP Logic
+local toolAddedConn, spawnedItemsConn
+
+local function checkAndApplyTool(child)
+    if child:IsA("Tool") then
+        applyESP(child, Color3.fromRGB(150, 150, 150), child.Name, ESP_Cache.Tools)
+    end
+end
+
+local function checkAndApplySpawnedItem(child)
+    applyESP(child, Color3.fromRGB(150, 150, 150), child.Name, ESP_Cache.Tools)
+end
+
+local function toggleToolESP(state)
+    ESP_Toggles.Tools = state
+    if state then
+        -- Scan Workspace Tools
+        for _, child in ipairs(Workspace:GetChildren()) do
+            checkAndApplyTool(child)
+        end
+        toolAddedConn = Workspace.ChildAdded:Connect(function(child)
+            task.wait(0.2)
+            if ESP_Toggles.Tools then
+                checkAndApplyTool(child)
+            end
+        end)
+
+        -- Scan Spawned Items Folder
+        local spawnedFolder = getSpawnedItemsFolder()
+        if spawnedFolder then
+            for _, child in ipairs(spawnedFolder:GetChildren()) do
+                checkAndApplySpawnedItem(child)
+            end
+            spawnedItemsConn = spawnedFolder.ChildAdded:Connect(function(child)
+                task.wait(0.2)
+                if ESP_Toggles.Tools then
+                    checkAndApplySpawnedItem(child)
+                end
+            end)
+        end
+    else
+        if toolAddedConn then toolAddedConn:Disconnect() toolAddedConn = nil end
+        if spawnedItemsConn then spawnedItemsConn:Disconnect() spawnedItemsConn = nil end
+        for inst, _ in pairs(ESP_Cache.Tools) do
+            removeESP(inst, ESP_Cache.Tools)
+        end
+    end
+end
+
+-- 4. Entities ESP Logic
+local entitiesConnection
+local function toggleEntitiesESP(state)
+    ESP_Toggles.Entities = state
+    if state then
+        local folder = getEntitiesFolder()
+        if folder then
+            for _, child in ipairs(folder:GetChildren()) do
+                applyESP(child, Color3.fromRGB(255, 0, 0), child.Name, ESP_Cache.Entities)
+            end
+            entitiesConnection = folder.ChildAdded:Connect(function(child)
+                task.wait(0.2)
+                if ESP_Toggles.Entities then
+                    applyESP(child, Color3.fromRGB(255, 0, 0), child.Name, ESP_Cache.Entities)
+                end
+            end)
+        end
+    else
+        if entitiesConnection then entitiesConnection:Disconnect() entitiesConnection = nil end
+        for inst, _ in pairs(ESP_Cache.Entities) do
+            removeESP(inst, ESP_Cache.Entities)
+        end
+    end
+end
+
+
+-- ==========================================
+--        Sleek Premium GUI Framework
+-- ==========================================
+
+-- Remove existing GUI if present
+local oldGui = CoreGui:FindFirstChild("JnUoScriptGUI")
+if oldGui then oldGui:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "JnUoScriptGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = CoreGui
+
+-- Main Panel Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 520, 0, 340)
+mainFrame.Position = UDim2.new(0.5, -260, 0.5, -170)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+-- Rounded corners
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = mainFrame
+
+-- Outer neon stroke/glow border
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 1.5
+mainStroke.Color = Color3.fromRGB(255, 110, 0)
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+mainStroke.Parent = mainFrame
+
+-- Title/Header Bar
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 45)
+topBar.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+topBar.BorderSizePixel = 0
+topBar.Parent = mainFrame
+
+local topCorner = Instance.new("UICorner")
+topCorner.CornerRadius = UDim.new(0, 10)
+topCorner.Parent = topBar
+
+-- Cover bottom corners of TopBar to keep layout clean
+local topCover = Instance.new("Frame")
+topCover.Size = UDim2.new(1, 0, 0, 10)
+topCover.Position = UDim2.new(0, 0, 1, -10)
+topCover.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+topCover.BorderSizePixel = 0
+topCover.Parent = topBar
+
+-- Window Title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "JnUo Script"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 18
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = topBar
+
+-- Close Button
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -40, 0.5, -15)
+closeButton.BackgroundTransparency = 1
+closeButton.Text = "✕"
+closeButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+closeButton.TextSize = 16
+closeButton.Font = Enum.Font.GothamBold
+closeButton.Parent = topBar
+
+closeButton.MouseEnter:Connect(function()
+    TweenService:Create(closeButton, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 75, 75)}):Play()
+end)
+closeButton.MouseLeave:Connect(function()
+    TweenService:Create(closeButton, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(150, 150, 150)}):Play()
+end)
+
+closeButton.MouseButton1Click:Connect(function()
+    -- Safely clean up all ESP behaviors
+    toggleDoorsESP(false)
+    togglePlayerESP(false)
+    toggleToolESP(false)
+    toggleEntitiesESP(false)
+    screenGui:Destroy()
+end)
+
+-- Sidebar Navigation Panel
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.Size = UDim2.new(0, 140, 1, -45)
+sidebar.Position = UDim2.new(0, 0, 0, 45)
+sidebar.BackgroundColor3 = Color3.fromRGB(11, 11, 15)
+sidebar.BorderSizePixel = 0
+sidebar.Parent = mainFrame
+
+local sidebarCorner = Instance.new("UICorner")
+sidebarCorner.CornerRadius = UDim.new(0, 10)
+sidebarCorner.Parent = sidebar
+
+local sidebarCover = Instance.new("Frame")
+sidebarCover.Size = UDim2.new(0, 10, 1, 0)
+sidebarCover.Position = UDim2.new(1, -10, 0, 0)
+sidebarCover.BackgroundColor3 = Color3.fromRGB(11, 11, 15)
+sidebarCover.BorderSizePixel = 0
+sidebarCover.Parent = sidebar
+
+-- Divider line
+local divider = Instance.new("Frame")
+divider.Size = UDim2.new(0, 1, 1, 0)
+divider.Position = UDim2.new(1, 0, 0, 0)
+divider.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+divider.BorderSizePixel = 0
+divider.Parent = sidebar
+
+-- Content Window Viewports
+local contentContainer = Instance.new("Frame")
+contentContainer.Name = "ContentContainer"
+contentContainer.Size = UDim2.new(1, -145, 1, -55)
+contentContainer.Position = UDim2.new(0, 145, 0, 50)
+contentContainer.BackgroundTransparency = 1
+contentContainer.Parent = mainFrame
+
+-- Tabs
+local tabESP = Instance.new("ScrollingFrame")
+tabESP.Size = UDim2.new(1, 0, 1, 0)
+tabESP.BackgroundTransparency = 1
+tabESP.CanvasSize = UDim2.new(0, 0, 1, 50)
+tabESP.ScrollBarThickness = 2
+tabESP.Visible = true
+tabESP.Parent = contentContainer
+
+local tabUtils = Instance.new("ScrollingFrame")
+tabUtils.Size = UDim2.new(1, 0, 1, 0)
+tabUtils.BackgroundTransparency = 1
+tabUtils.CanvasSize = UDim2.new(0, 0, 1, 50)
+tabUtils.ScrollBarThickness = 2
+tabUtils.Visible = false
+tabUtils.Parent = contentContainer
+
+-- Layout alignments
+local layoutESP = Instance.new("UIListLayout")
+layoutESP.Padding = UDim.new(0, 10)
+layoutESP.SortOrder = Enum.SortOrder.LayoutOrder
+layoutESP.Parent = tabESP
+
+local layoutUtils = Instance.new("UIListLayout")
+layoutUtils.Padding = UDim.new(0, 10)
+layoutUtils.SortOrder = Enum.SortOrder.LayoutOrder
+layoutUtils.Parent = tabUtils
+
+-- UI Dragging Mechanism
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    TweenService:Create(mainFrame, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    }):Play()
+end
+
+topBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+topBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- Sidebar Button Creator
+local function createTabButton(name, positionY, targetTab)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.9, 0, 0, 35)
+    btn.Position = UDim2.new(0.05, 0, 0, positionY)
+    btn.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(150, 150, 160)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = sidebar
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Thickness = 1
+    btnStroke.Color = Color3.fromRGB(40, 40, 50)
+    btnStroke.Parent = btn
+
+    btn.MouseButton1Click:Connect(function()
+        -- Swap visible tab panels
+        tabESP.Visible = false
+        tabUtils.Visible = false
+        targetTab.Visible = true
+
+        -- Update button styling
+        for _, child in ipairs(sidebar:GetChildren()) do
+            if child:IsA("TextButton") then
+                TweenService:Create(child, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(22, 22, 30), TextColor3 = Color3.fromRGB(150, 150, 160)}):Play()
+                child:FindFirstChildOfClass("UIStroke").Color = Color3.fromRGB(40, 40, 50)
+            end
+        end
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 110, 0), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        btnStroke.Color = Color3.fromRGB(255, 255, 255)
+    end)
+    return btn
+end
+
+local espBtn = createTabButton("Visuals (ESP)", 15, tabESP)
+local utilsBtn = createTabButton("Utilities", 60, tabUtils)
+
+-- Set initial button state
+espBtn.BackgroundColor3 = Color3.fromRGB(255, 110, 0)
+espBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+espBtn:FindFirstChildOfClass("UIStroke").Color = Color3.fromRGB(255, 255, 255)
+
+-- Modern Toggle Switch Creator
+local function createToggle(parent, title, defaultState, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.95, 0, 0, 45)
+    frame.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(40, 40, 50)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.Position = UDim2.new(0, 15, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = title
+    label.TextColor3 = Color3.fromRGB(230, 230, 230)
+    label.TextSize = 13
+    label.Font = Enum.Font.GothamSemibold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Size = UDim2.new(0, 42, 0, 22)
+    toggleButton.Position = UDim2.new(1, -55, 0.5, -11)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    toggleButton.Text = ""
+    toggleButton.Parent = frame
+
+    local tCorner = Instance.new("UICorner")
+    tCorner.CornerRadius = UDim.new(1, 0)
+    tCorner.Parent = toggleButton
+
+    local indicator = Instance.new("Frame")
+    indicator.Size = UDim2.new(0, 16, 0, 16)
+    indicator.Position = UDim2.new(0, 3, 0.5, -8)
+    indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    indicator.BorderSizePixel = 0
+    indicator.Parent = toggleButton
+
+    local iCorner = Instance.new("UICorner")
+    iCorner.CornerRadius = UDim.new(1, 0)
+    iCorner.Parent = indicator
+
+    local active = defaultState
+    local function updateVisuals()
+        if active then
+            TweenService:Create(toggleButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 110, 0)}):Play()
+            TweenService:Create(indicator, TweenInfo.new(0.2), {Position = UDim2.new(1, -19, 0.5, -8)}):Play()
+        else
+            TweenService:Create(toggleButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 50)}):Play()
+            TweenService:Create(indicator, TweenInfo.new(0.2), {Position = UDim2.new(0, 3, 0.5, -8)}):Play()
+        end
+    end
+
+    updateVisuals()
+
+    toggleButton.MouseButton1Click:Connect(function()
+        active = not active
+        updateVisuals()
+        task.spawn(callback, active)
+    end)
+end
+
+-- Premium Button Creator (For Utilities)
+local function createButton(parent, text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.95, 0, 0, 45)
+    btn.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = btn
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(40, 40, 50)
+    stroke.Parent = btn
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 110, 0)}):Play()
+        stroke.Color = Color3.fromRGB(255, 255, 255)
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(22, 22, 30)}):Play()
+        stroke.Color = Color3.fromRGB(40, 40, 50)
+    end)
+
+    btn.MouseButton1Click:Connect(callback)
+end
+
+-- Assemble Visual Toggles
+createToggle(tabESP, "Doors ESP (Orange Highlight)", false, toggleDoorsESP)
+createToggle(tabESP, "Player ESP (Blue with Names)", false, togglePlayerESP)
+createToggle(tabESP, "Item / Tool ESP (Gray with Names)", false, toggleToolESP)
+createToggle(tabESP, "Entity ESP (Red with Names)", false, toggleEntitiesESP)
+
+-- Assemble Utility Actions
+createButton(tabUtils, "Load Sky Hub Tool Giver", function()
+    task.spawn(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/yofriendfromschool1/Sky-Hub-Backup/main/gametoolgiver.lua"))()
+    end)
+end)
+
+createButton(tabUtils, "Forcibly Clean Roblox HealthBar Script", function()
+    removeHealthBarScript()
+end)
+
+-- Minimize/Maximize Toggle Key (Press 'RightShift' to hide/show main window)
+local minimized = false
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.RightShift then
+        minimized = not minimized
+        mainFrame.Visible = not minimized
+    end
+end)
